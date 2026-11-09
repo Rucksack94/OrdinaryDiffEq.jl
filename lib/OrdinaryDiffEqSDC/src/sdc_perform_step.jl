@@ -247,6 +247,7 @@ end
     adaptive && sdc_step_update!(u, uprev, weights, zk, zEk, ubuf[M], alg.step_update)
     for sweep in 1:(alg.num_sweeps)
         QΔ = sdc_qdelta_for(tab, sweep)
+        sdc_set_nlsolve_settings!(cache.nlsolvers, alg, sweep)
         fill!(failed, false)
         fill!(cache.nf, 0)
         fill!(cache.nf2, 0)
@@ -311,6 +312,7 @@ end
     ulow = u
     for sweep in 1:(alg.num_sweeps)
         QΔ = sdc_qdelta_for(tab, sweep)
+        sdc_set_nlsolve_settings!(nlsolvers, alg, sweep)
         for m in 1:M
             tm = t + nodes[m] * dt
             tmp = uprev

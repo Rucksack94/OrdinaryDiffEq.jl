@@ -39,6 +39,18 @@ end
     end
 end
 
+@testset "inexact sweeps keep the IMEX order gain" begin
+    for (make, tag) in ((imex_oop, "oop"), (imex_iip, "iip")), K in 3:5
+        alg = SDC(
+            num_nodes = 4, num_sweeps = K, sweeper = SDCSweeper.BE,
+            inexact_sweeps = K - 1, inexact_factor = 1.0e-1
+        )
+        @testset "$tag K=$K" begin
+            @test observed_order(make(), alg) ≈ K + 1 atol = 0.3
+        end
+    end
+end
+
 @testset "the explicit part is never differentiated" begin
     function f2_no_duals(u, p, t)
         eltype(u) <: AbstractFloat || error("f2 reached automatic differentiation")

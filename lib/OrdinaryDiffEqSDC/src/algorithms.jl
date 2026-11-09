@@ -59,7 +59,32 @@ Dense output is the collocation polynomial through the final sweep's node values
     number={4},
     pages={1219--1241},
     year={2015},
-    publisher={Springer}}""",
+    publisher={Springer}}
+    @inproceedings{speck2016inexactSDC,
+    title={Inexact spectral deferred corrections},
+    author={Speck, Robert and Ruprecht, Daniel and Minion, Matthew and Emmett, Matthew and Krause, Rolf},
+    booktitle={Domain Decomposition Methods in Science and Engineering XXII},
+    pages={389--396},
+    year={2016},
+    publisher={Springer}}
+    @article{eisenstat1996inexactNewton,
+    title={Choosing the forcing terms in an inexact Newton method},
+    author={Eisenstat, Stanley C. and Walker, Homer F.},
+    journal={SIAM Journal on Scientific Computing},
+    volume={17},
+    number={1},
+    pages={16--32},
+    year={1996},
+    publisher={SIAM}}
+    @article{freese2026parallelSDC,
+    title={Parallel performance of shared memory parallel spectral deferred corrections},
+    author={Freese, Philip and G{\"o}tschel, Sebastian and Lunet, Thibaut and Ruprecht, Daniel and Schreiber, Martin},
+    journal={The International Journal of High Performance Computing Applications},
+    volume={40},
+    number={5},
+    pages={643--655},
+    year={2026},
+    publisher={SAGE Publications}}""",
     """
     - `num_nodes`: number of collocation nodes `M` per step.
     - `node_type`: node distribution, `SDCNodes.Legendre` or `.Equidistant`.
@@ -85,6 +110,22 @@ Dense output is the collocation polynomial through the final sweep's node values
         sweep. Out-of-place problems sweep serially whatever this is set to. On a
         `SplitODEProblem` it also needs `explicit_sweeper = SDCSweeper.Picard`,
         since explicit Euler couples each node to the ones before it.
+    - `inexact_sweeps`: number of leading sweeps whose node solves may use a
+        loosened convergence tolerance, in the spirit of the forcing terms of
+        Eisenstat and Walker: a node-solve error committed in sweep `k` is
+        damped by the sweeps after it, so early sweeps need less accurate
+        solves. The inexact sweeps form a geometric ramp anchored at the first
+        exact sweep: sweep `k ≤ inexact_sweeps` runs its node solves at
+        `κ_base / factor^(inexact_sweeps - k + 1)`, one loosening step below
+        the exact regime at the boundary, where `κ_base` is the `κ` of the
+        `nlsolve` algorithm. Sweeps beyond `inexact_sweeps` — always including
+        the final one — run at the `nlsolve` algorithm's own settings.
+        `0` (the default) leaves every solve exact.
+    - `inexact_factor`: the assumed per-sweep contraction of the SDC
+        iteration; the node-solve tolerance of an inexact sweep is loosened by
+        `1/inexact_factor` per ramp step. `1.0e-1` (the default) is
+        conservative; a stiff problem with a fast-contracting sweeper such as
+        `SDCSweeper.LU` typically justifies `1.0e-2`. Must lie in `(0, 1]`.
     """,
     """
     num_nodes = 3,
@@ -110,6 +151,8 @@ struct SDC{AD, F, F2, TO, CJ} <: OrdinaryDiffEqNewtonAdaptiveAlgorithm
     nlsolve::F2
     autodiff::AD
     concrete_jac::CJ
+    inexact_sweeps::Int
+    inexact_factor::Float64
 end
 
 function SDC(;
@@ -122,13 +165,16 @@ function SDC(;
         step_update::SDCStepUpdate.T = SDCStepUpdate.Quadrature,
         threading = false,
         autodiff = AutoForwardDiff(), concrete_jac = nothing,
-        linsolve = nothing, nlsolve = NLNewton()
+        linsolve = nothing, nlsolve = NLNewton(),
+        inexact_sweeps::Int = 0, inexact_factor = 1.0e-1
     )
     sdc_validate(num_nodes, quad_type, num_sweeps, step_update, sweeper, threading)
     sdc_validate_explicit(explicit_sweeper)
+    sdc_validate_inexact(num_sweeps, inexact_sweeps, inexact_factor)
     autodiff = _fixup_ad(autodiff)
     return SDC(
         num_nodes, node_type, quad_type, num_sweeps, sweeper, explicit_sweeper,
-        step_update, threading, linsolve, nlsolve, autodiff, _unwrap_val(concrete_jac)
+        step_update, threading, linsolve, nlsolve, autodiff, _unwrap_val(concrete_jac),
+        inexact_sweeps, inexact_factor
     )
 end

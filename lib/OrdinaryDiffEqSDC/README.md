@@ -42,6 +42,8 @@ different tableau.
 | `sweeper` | `SDCSweeper.BE` | the preconditioner `QΔ`, see below |
 | `explicit_sweeper` | `SDCSweeper.FE` | the preconditioner for `f2` on a `SplitODEProblem`, `.FE` or `.Picard` |
 | `step_update` | `SDCStepUpdate.Quadrature` | `Quadrature` (`u_n + Δt Σ_m w_m f_m`) or `LastNode` (`u_M`) |
+| `inexact_sweeps` | `0` | number of leading sweeps whose node solves use a loosened tolerance, see *Inexact sweeps* below |
+| `inexact_factor` | `1.0e-1` | the assumed per-sweep contraction behind that loosening, in `(0, 1]` |
 
 Standard implicit-solver keywords (`autodiff`, `concrete_jac`, `linsolve`,
 `nlsolve`) are accepted and behave as elsewhere in the library.
@@ -165,6 +167,33 @@ sweepers separate clearly:
 | `MIN_SR_FLEX` | 7.9e-2 | 5.7e-2 | 1.8e-4 | 2.6e-7 |
 | `BEpar` | 1.4e+1 | 9.9e+0 | 1.5e+0 | 2.7e-1 |
 
+## Inexact sweeps
+
+Following inexact spectral deferred correction, a node-solve error committed in
+sweep `k` is damped by the sweeps after it, so early sweeps need less accurate
+solves. With `inexact_sweeps > 0` the first `inexact_sweeps` sweeps run their
+node solves at a loosened convergence tolerance: sweep `k` at
+`κ / factor^(inexact_sweeps - k + 1)`, where `κ` is the `nlsolve` algorithm's
+own tolerance (`1//100` for the default `NLNewton`). The inexact sweeps form a
+geometric ramp anchored one loosening step below the exact regime; sweeps past
+`inexact_sweeps` — always including the final one — stay exact, and the
+loosening is conservative: sweep `k` has `K - k` sweeps of damping ahead of it,
+which always exceeds its ramp exponent.
+
+`inexact_factor = 1.0e-1` (the default) is safe whenever each sweep contracts
+the iteration error by at least a factor of ten — the usual one-order-per-sweep
+behavior. If the true contraction is worse, the ramp loosens more than the
+later sweeps can repair and the observed order degrades, which is the failure
+mode the convergence tests detect.
+
+On Prothero-Robinson with `lambda = -1e6`, `M = 4`, `K = 4`, `dt = 1/8` and
+the `LU` sweeper, exact sweeps take 186 node-solve iterations and
+`inexact_sweeps = 3, inexact_factor = 1.0e-2` takes 174, at the same eight
+accepted steps and the same error to thirteen significant digits.
+
+The idea follows Speck et al. (2016), with the tolerance ramp in the spirit of
+the forcing terms of Eisenstat and Walker (1996); see the references below.
+
 ## References
 
 - A. Dutt, L. Greengard and V. Rokhlin, *Spectral deferred correction methods for
@@ -175,6 +204,13 @@ sweepers separate clearly:
   Computing and Visualization in Science 19 (2018) 75–83.
 - G. Čaklović, T. Lunet, S. Götschel and D. Ruprecht, *Improving efficiency of
   parallel across the method spectral deferred corrections*, SIAM J. Sci. Comput. 47 (2025) A430-A453.
+- R. Speck, D. Ruprecht, M. Minion, M. Emmett and R. Krause, *Inexact spectral deferred corrections*, 
+  Domain Decomposition Methods in Science and Engineering XXII, Springer (2016) 389–396.
+- S. C. Eisenstat and H. F. Walker, *Choosing the forcing terms in an inexact
+  Newton method*, SIAM J. Sci. Comput. 17 (1996) 16–32.
+- P. Freese, S. Götschel, T. Lunet, D. Ruprecht and M. Schreiber, 
+  *Parallel performance of shared memory parallel spectral deferred corrections*, Int. J. High 
+  Perform. Comput. Appl. 40 (2026) 643–655.
 
 The coefficient conventions and the convergence-order test follow
 [qmat](https://github.com/Parallel-in-Time/qmat).

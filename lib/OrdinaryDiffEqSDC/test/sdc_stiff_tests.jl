@@ -113,3 +113,31 @@ end
         @test sol.u[end] ≈ exact rtol = 1.0e-8
     end
 end
+
+@testset "SDC inexact sweeps" begin
+    λ = -1.0e6
+    alg_exact = SDC(num_nodes = 4, num_sweeps = 4, sweeper = SDCSweeper.LU)
+    alg_inexact = SDC(
+        num_nodes = 4, num_sweeps = 4, sweeper = SDCSweeper.LU,
+        inexact_sweeps = 3, inexact_factor = 1.0e-2
+    )
+    kw = (dt = 1 / 8, adaptive = false, save_everystep = false)
+
+    # Out-of-place scalar problem: constant-cache path.
+    exact = solve(prothero_robinson(λ), alg_exact; kw...)
+    inexact = solve(prothero_robinson(λ), alg_inexact; kw...)
+    @test SciMLBase.successful_retcode(inexact)
+    @test exact.stats.naccept == inexact.stats.naccept
+    @test inexact.stats.nnonliniter < exact.stats.nnonliniter
+    @test abs(inexact.u[end] - cos(1.0)) <= 2 * abs(exact.u[end] - cos(1.0))
+
+    # In-place problem: mutable-cache path — the sweep hook must act here too.
+    prob = ODEProblem(
+        (du, u, p, t) -> (du[1] = λ * (u[1] - cos(t)) - sin(t)), [1.0], (0.0, 1.0)
+    )
+    exact_ip = solve(prob, alg_exact; kw...)
+    inexact_ip = solve(prob, alg_inexact; kw...)
+    @test SciMLBase.successful_retcode(inexact_ip)
+    @test inexact_ip.stats.nnonliniter < exact_ip.stats.nnonliniter
+    @test abs(inexact_ip.u[end][1] - cos(1.0)) <= 2 * abs(exact_ip.u[end][1] - cos(1.0))
+end
